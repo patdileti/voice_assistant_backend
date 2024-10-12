@@ -17,7 +17,7 @@ const allowedOrigins = ['http://localhost:3000','https://voiceassistantapp-produ
 app.use(cors({
   origin: allowedOrigins,
   methods: "POST",
-  credentials: true, // If you need to accept credentials (e.g., cookies, authorization headers)
+  credentials: false, // If you need to accept credentials (e.g., cookies, authorization headers)
 }));
 
 // Rate limiting middleware (limit to 100 requests per IP per 15 minutes)
