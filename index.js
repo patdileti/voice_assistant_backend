@@ -13,53 +13,66 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 
 // Configure CORS to allow only certain origins
-const allowedOrigins = ['http://localhost:3000','https://voiceassistantapp-production.up.railway.app']; // Replace with your allowed origin(s)
+const allowedOrigins = ['http://localhost:3000','https://voiceassistantapp-production.up.railway.app'];
 app.use(cors({
   origin: allowedOrigins,
   methods: "POST",
-  credentials: false, // If you need to accept credentials (e.g., cookies, authorization headers)
+  credentials: false,
 }));
 
 // Rate limiting middleware (limit to 100 requests per IP per 15 minutes)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: "Too many requests from this IP, please try again later.",
 });
 app.use(limiter);
 
 app.use(express.json());
 
+// In-memory store for conversation history (in a production environment, use a database)
+const conversationHistory = new Map();
+
 // Endpoint to receive the transcript and generate a response
 app.post(
   "/api/generate-response",
   // Validate input
   body('transcript').isString().notEmpty().withMessage('Transcript is required and should be a string.'),
-  body('instructionPrompt').isString().optional(), // instructionPrompt is now an optional parameter
+  body('sessionId').isString().notEmpty().withMessage('SessionId is required and should be a string.'),
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { transcript, instructionPrompt } = req.body;
+    const { transcript, sessionId } = req.body;
 
-    // Use the provided instructionPrompt or a default one if not provided
-    const combinedInstruction = instructionPrompt 
-      ? instructionPrompt + " " 
-      : "Please respond briefly in a maximum of 100 words. Always respond simple and direct, imita la respuesta de comunicacion cordial humana.";
+    // Log received data for debugging
+    console.log("Received transcript:", transcript);
+    console.log("Received sessionId:", sessionId);
 
-    const messageContent = combinedInstruction + transcript; // Combine the instruction with the transcript
-    // print messageContent for testing purposes
-    console.log("instructionPrompt: ", instructionPrompt);
-    console.log("messageContent: ", messageContent);
+    // Get or initialize conversation history for this session
+    if (!conversationHistory.has(sessionId)) {
+      conversationHistory.set(sessionId, []);
+    }
+    const history = conversationHistory.get(sessionId);
+
+    // Prepare the messages array for OpenAI API
+    const messages = [
+      { role: "system", content: "You are a helpful assistant. Please respond briefly and directly." },
+      ...history,
+      { role: "user", content: transcript }
+    ];
+
+    console.log("Sending messages to OpenAI:", messages);
+
     try {
-      // Make a request to the OpenAI API or another provider
+      // Make a request to the OpenAI API
       const response = await axios.post(
         "https://api.openai.com/v1/chat/completions",
         {
           model: "gpt-3.5-turbo",
-          messages: [{ role: "user", content: messageContent }], // Use the new message content
+          messages: messages,
           max_tokens: 150,
         },
         {
@@ -69,7 +82,18 @@ app.post(
         }
       );
 
-      res.status(200).json({ response: response.data.choices[0].message.content });
+      const assistantResponse = response.data.choices[0].message.content;
+
+      // Update conversation history
+      history.push({ role: "user", content: transcript });
+      history.push({ role: "assistant", content: assistantResponse });
+
+      // Limit history to last 10 messages (5 exchanges) to prevent token limit issues
+      if (history.length > 10) {
+        history.splice(0, 2);
+      }
+
+      res.status(200).json({ response: assistantResponse });
     } catch (error) {
       console.error(
         "Error generating response: ",
@@ -79,7 +103,6 @@ app.post(
     }
   }
 );
-
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
