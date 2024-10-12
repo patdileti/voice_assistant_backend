@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 
 // Configure CORS to allow only certain origins
-const allowedOrigins = ['http://localhost:3000','https://voiceassistantapp-production.up.railway.app/']; // Replace with your allowed origin(s)
+const allowedOrigins = ['http://localhost:3000','https://voiceassistantapp-production.up.railway.app']; // Replace with your allowed origin(s)
 app.use(cors({
   origin: allowedOrigins,
   methods: "POST",
